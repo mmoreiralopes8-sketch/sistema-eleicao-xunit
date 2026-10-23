@@ -1,12 +1,14 @@
 namespace SistemaEleicao.Core;
 
 /// <summary>
-/// Gerencia candidatos, eleitores, votação e apuração.
+/// Regras de negócio da eleição: candidatos, eleitores, votação e apuração.
 /// </summary>
 public class EleicaoManager
 {
     private readonly List<Candidato> _candidatos = new();
     private readonly List<Eleitor> _eleitores = new();
+    private static readonly char[] _separadoresDeTitulo = { '.', '-', ' ' };
+
     private int _votosNulos;
     private int _votosBrancos;
 
@@ -67,21 +69,33 @@ public class EleicaoManager
         return TipoVoto.Branco;
     }
 
+    /// <summary>
+    /// Consolida os votos computados e identifica o(s) candidato(s) mais votado(s).
+    /// </summary>
     public ResultadoApuracao Apurar()
     {
-        var maiorVotacao = _candidatos.Count == 0 ? 0 : _candidatos.Max(c => c.Votos);
-        var vencedores = maiorVotacao == 0
-            ? new List<Candidato>()
-            : _candidatos.Where(c => c.Votos == maiorVotacao).ToList();
-
         var votosValidos = _candidatos.Sum(c => c.Votos);
+        var totalVotos = votosValidos + _votosNulos + _votosBrancos;
+        var candidatosOrdenados = _candidatos
+            .OrderByDescending(c => c.Votos)
+            .ThenBy(c => c.Numero)
+            .ToList();
 
         return new ResultadoApuracao(
-            _candidatos.OrderByDescending(c => c.Votos).ThenBy(c => c.Numero).ToList(),
+            candidatosOrdenados,
             _votosNulos,
             _votosBrancos,
-            votosValidos + _votosNulos + _votosBrancos,
-            vencedores);
+            totalVotos,
+            ObterMaisVotados());
+    }
+
+    private List<Candidato> ObterMaisVotados()
+    {
+        var maiorVotacao = _candidatos.Count == 0 ? 0 : _candidatos.Max(c => c.Votos);
+
+        return maiorVotacao == 0
+            ? new List<Candidato>()
+            : _candidatos.Where(c => c.Votos == maiorVotacao).ToList();
     }
 
     private Eleitor ObterEleitorApto(string titulo)
@@ -105,7 +119,7 @@ public class EleicaoManager
             throw new ArgumentException("O título/CPF do eleitor é obrigatório.", nameof(titulo));
         }
 
-        var normalizado = new string(titulo.Where(c => c is not ('.' or '-' or ' ')).ToArray());
+        var normalizado = new string(titulo.Where(c => !_separadoresDeTitulo.Contains(c)).ToArray());
 
         if (normalizado.Length == 0 || !normalizado.All(char.IsDigit))
         {
@@ -114,38 +128,4 @@ public class EleicaoManager
 
         return normalizado;
     }
-}
-
-/// <summary>
-/// Resultado final da apuração dos votos.
-/// </summary>
-public class ResultadoApuracao
-{
-    public ResultadoApuracao(
-        IReadOnlyList<Candidato> candidatos,
-        int votosNulos,
-        int votosBrancos,
-        int totalVotos,
-        IReadOnlyList<Candidato> vencedores)
-    {
-        Candidatos = candidatos;
-        VotosNulos = votosNulos;
-        VotosBrancos = votosBrancos;
-        TotalVotos = totalVotos;
-        Vencedores = vencedores;
-    }
-
-    public IReadOnlyList<Candidato> Candidatos { get; }
-
-    public int VotosNulos { get; }
-
-    public int VotosBrancos { get; }
-
-    public int TotalVotos { get; }
-
-    public IReadOnlyList<Candidato> Vencedores { get; }
-
-    public bool HouveEmpate => Vencedores.Count > 1;
-
-    public Candidato? Vencedor => Vencedores.Count == 1 ? Vencedores[0] : null;
 }
